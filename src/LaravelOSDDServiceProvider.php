@@ -14,6 +14,8 @@ use Xefi\LaravelOSDD\Console\Commands\Make\ServiceProviderMakeCommand;
 use Xefi\LaravelOSDD\Console\Commands\Make\TestMakeCommand;
 use Xefi\LaravelOSDD\Console\Commands\LayerCommand;
 use Xefi\LaravelOSDD\Console\Commands\PhpunitCommand;
+use Xefi\LaravelOSDD\SeederRegistry;
+use Xefi\LaravelOSDD\Console\Commands\SeedCommand;
 use Xefi\LaravelOSDD\Console\Commands\StartCommand;
 
 class LaravelOSDDServiceProvider extends ServiceProvider
@@ -37,6 +39,7 @@ class LaravelOSDDServiceProvider extends ServiceProvider
                 ServiceProviderMakeCommand::class,
                 TestMakeCommand::class,
                 PhpunitCommand::class,
+                SeedCommand::class,
             ]);
         }
 
@@ -53,6 +56,8 @@ class LaravelOSDDServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(
             __DIR__.'/../config/osdd.php', 'osdd'
         );
+
+        $this->app->singleton(SeederRegistry::class, fn() => new SeederRegistry());
 
         $this->app->singleton(MigrateMakeCommand::class, function ($app) {
             return new MigrateMakeCommand($app['migration.creator'], $app['composer']);
