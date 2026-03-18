@@ -18,6 +18,7 @@ class StartCommandTest extends TestCase
 
         $app['config']->set('osdd.layers.paths', [
             'functional' => $this->projectPath . '/functional',
+            'technical'  => $this->projectPath . '/technical',
         ]);
     }
 
@@ -25,18 +26,16 @@ class StartCommandTest extends TestCase
     {
         parent::setUp();
 
-        mkdir($this->projectPath . '/app/Models', 0755, true);
-        file_put_contents($this->projectPath . '/app/Models/User.php', $this->fakeUserModel());
-
-        mkdir($this->projectPath . '/database/factories', 0755, true);
-        file_put_contents($this->projectPath . '/database/factories/UserFactory.php', $this->fakeUserFactory());
-
+        mkdir($this->projectPath . '/app', 0755, true);
         mkdir($this->projectPath . '/database/migrations', 0755, true);
-        file_put_contents($this->projectPath . '/database/migrations/0001_01_01_000000_create_users_table.php', $this->fakeUserMigration());
+        mkdir($this->projectPath . '/database/factories', 0755, true);
 
-        file_put_contents($this->projectPath . '/composer.json', json_encode(['require' => new \stdClass()], JSON_PRETTY_PRINT) . PHP_EOL);
+        file_put_contents($this->projectPath . '/composer.json', json_encode($this->fakeComposer(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL);
         mkdir($this->projectPath . '/config', 0755, true);
         file_put_contents($this->projectPath . '/config/app.php', '<?php return [];');
+
+        mkdir($this->projectPath . '/bootstrap', 0755, true);
+        file_put_contents($this->projectPath . '/bootstrap/providers.php', "<?php\n\nreturn [\n    App\\Providers\\AppServiceProvider::class,\n];\n");
     }
 
     protected function tearDown(): void
@@ -47,54 +46,39 @@ class StartCommandTest extends TestCase
 
     public function testItCreatesTheUsersLayer(): void
     {
-        $this->artisan('osdd:start')->assertExitCode(0);
+        $this->artisan('osdd:start')
+            ->expectsConfirmation('Run composer update now?', 'no')
+            ->assertExitCode(0);
 
         $this->assertFileExists($this->projectPath . '/functional/users/composer.json');
         $this->assertFileExists($this->projectPath . '/functional/users/src/Providers/UsersServiceProvider.php');
-        $this->assertFileExists($this->projectPath . '/functional/users/database/migrations/.gitkeep');
-        $this->assertFileExists($this->projectPath . '/functional/users/database/factories/.gitkeep');
+        $this->assertDirectoryExists($this->projectPath . '/functional/users/database/migrations');
+        $this->assertDirectoryExists($this->projectPath . '/functional/users/database/factories');
         $this->assertFileExists($this->projectPath . '/functional/users/database/seeders/UsersSeeder.php');
-        $this->assertFileExists($this->projectPath . '/functional/users/src/Models/.gitkeep');
-        $this->assertFileExists($this->projectPath . '/functional/users/src/Factories/.gitkeep');
-        $this->assertFileExists($this->projectPath . '/functional/users/src/Policies/.gitkeep');
+        $this->assertDirectoryExists($this->projectPath . '/functional/users/src/Models');
     }
 
     public function testItCreatesTheUsersLayerComposerJson(): void
     {
-        $this->artisan('osdd:start')->assertExitCode(0);
+        $this->artisan('osdd:start')
+            ->expectsConfirmation('Run composer update now?', 'no')
+            ->assertExitCode(0);
 
         $contents = file_get_contents($this->projectPath . '/functional/users/composer.json');
 
         $this->assertStringContainsString('"name": "functional/users"', $contents);
         $this->assertStringContainsString('"type": "layer"', $contents);
         $this->assertStringContainsString('"Functional\\\\Users\\\\": "src/"', $contents);
+        $this->assertStringContainsString('"Functional\\\\Users\\\\Database\\\\Seeders\\\\": "database/seeders/"', $contents);
+        $this->assertStringContainsString('"Functional\\\\Users\\\\Database\\\\Factories\\\\": "database/factories/"', $contents);
+        $this->assertStringContainsString('Functional\\\\Users\\\\Providers\\\\UsersServiceProvider', $contents);
     }
 
-    public function testItGeneratesUsersSeederForUsersLayer(): void
+    public function testItCreatesUserModelFromStub(): void
     {
-        $this->artisan('osdd:start')->assertExitCode(0);
-
-        $contents = file_get_contents($this->projectPath . '/functional/users/database/seeders/UsersSeeder.php');
-
-        $this->assertStringContainsString('namespace Functional\Users\Database\Seeders;', $contents);
-        $this->assertStringContainsString('class UsersSeeder extends Seeder', $contents);
-    }
-
-    public function testItCreatesTheUsersServiceProvider(): void
-    {
-        $this->artisan('osdd:start')->assertExitCode(0);
-
-        $contents = file_get_contents($this->projectPath . '/functional/users/src/Providers/UsersServiceProvider.php');
-
-        $this->assertStringContainsString('namespace Functional\Users\Providers;', $contents);
-        $this->assertStringContainsString('class UsersServiceProvider extends LayerServiceProvider', $contents);
-        $this->assertStringContainsString("loadMigrationsFrom(__DIR__ . '/../../database/migrations')", $contents);
-        $this->assertStringContainsString('loadSeeders([UsersSeeder::class])', $contents);
-    }
-
-    public function testItMovesTheUserModelWithCorrectNamespace(): void
-    {
-        $this->artisan('osdd:start')->assertExitCode(0);
+        $this->artisan('osdd:start')
+            ->expectsConfirmation('Run composer update now?', 'no')
+            ->assertExitCode(0);
 
         $this->assertFileExists($this->projectPath . '/functional/users/src/Models/User.php');
 
@@ -102,20 +86,18 @@ class StartCommandTest extends TestCase
 
         $this->assertStringContainsString('namespace Functional\Users\Models;', $contents);
         $this->assertStringContainsString('class User extends Authenticatable', $contents);
+        $this->assertStringContainsString('use Functional\Users\Database\Factories\UserFactory;', $contents);
+        $this->assertStringContainsString('#[UseFactory(UserFactory::class)]', $contents);
+        $this->assertStringContainsString('#[Fillable([', $contents);
+        $this->assertStringContainsString('#[Hidden([', $contents);
+        $this->assertStringContainsString("'password' => 'hashed'", $contents);
     }
 
-    public function testItUpdatesTheUserModelHasFactoryDocblock(): void
+    public function testItCreatesUserFactoryFromStub(): void
     {
-        $this->artisan('osdd:start')->assertExitCode(0);
-
-        $contents = file_get_contents($this->projectPath . '/functional/users/src/Models/User.php');
-
-        $this->assertStringContainsString('@use HasFactory<\Functional\Users\Database\Factories\UserFactory>', $contents);
-    }
-
-    public function testItMovesTheUserFactoryWithCorrectNamespace(): void
-    {
-        $this->artisan('osdd:start')->assertExitCode(0);
+        $this->artisan('osdd:start')
+            ->expectsConfirmation('Run composer update now?', 'no')
+            ->assertExitCode(0);
 
         $this->assertFileExists($this->projectPath . '/functional/users/database/factories/UserFactory.php');
 
@@ -126,75 +108,120 @@ class StartCommandTest extends TestCase
         $this->assertStringContainsString('class UserFactory extends Factory', $contents);
     }
 
-    public function testItMovesUserMigrationsToLayer(): void
+    public function testItGeneratesUsersSeederForUsersLayer(): void
     {
-        $this->artisan('osdd:start')->assertExitCode(0);
+        $this->artisan('osdd:start')
+            ->expectsConfirmation('Run composer update now?', 'no')
+            ->assertExitCode(0);
 
-        $this->assertFileExists($this->projectPath . '/functional/users/database/migrations/0001_01_01_000000_create_users_table.php');
-        $this->assertFileDoesNotExist($this->projectPath . '/database/migrations/0001_01_01_000000_create_users_table.php');
+        $contents = file_get_contents($this->projectPath . '/functional/users/database/seeders/UsersSeeder.php');
+
+        $this->assertStringContainsString('namespace Functional\Users\Database\Seeders;', $contents);
+        $this->assertStringContainsString('class UsersSeeder extends Seeder', $contents);
+        $this->assertStringContainsString('use Functional\Users\Models\User;', $contents);
+        $this->assertStringContainsString('User::factory()->count(10)->create();', $contents);
+    }
+
+    public function testItCreatesUserMigrationFromStub(): void
+    {
+        $this->artisan('osdd:start')
+            ->expectsConfirmation('Run composer update now?', 'no')
+            ->assertExitCode(0);
+
+        $migrations = glob($this->projectPath . '/functional/users/database/migrations/*_create_users_table.php');
+
+        $this->assertNotEmpty($migrations);
+
+        $contents = file_get_contents($migrations[0]);
+
+        $this->assertStringContainsString("Schema::create('users'", $contents);
+        $this->assertStringContainsString('$table->string(\'email\')', $contents);
+    }
+
+    public function testItCreatesTheUsersServiceProvider(): void
+    {
+        $this->artisan('osdd:start')
+            ->expectsConfirmation('Run composer update now?', 'no')
+            ->assertExitCode(0);
+
+        $contents = file_get_contents($this->projectPath . '/functional/users/src/Providers/UsersServiceProvider.php');
+
+        $this->assertStringContainsString('namespace Functional\Users\Providers;', $contents);
+        $this->assertStringContainsString('class UsersServiceProvider extends LayerServiceProvider', $contents);
+        $this->assertStringContainsString("loadMigrationsFrom(__DIR__ . '/../../database/migrations')", $contents);
+        $this->assertStringContainsString('loadSeeders([UsersSeeder::class])', $contents);
     }
 
     public function testItDeletesTheAppDirectory(): void
     {
-        $this->artisan('osdd:start')->assertExitCode(0);
+        $this->artisan('osdd:start')
+            ->expectsConfirmation('Run composer update now?', 'no')
+            ->assertExitCode(0);
 
         $this->assertDirectoryDoesNotExist($this->projectPath . '/app');
     }
 
     public function testItDeletesTheDatabaseDirectory(): void
     {
-        $this->artisan('osdd:start')->assertExitCode(0);
+        $this->artisan('osdd:start')
+            ->expectsConfirmation('Run composer update now?', 'no')
+            ->assertExitCode(0);
 
         $this->assertDirectoryDoesNotExist($this->projectPath . '/database');
     }
 
     public function testItDeletesTheConfigDirectory(): void
     {
-        $this->artisan('osdd:start')->assertExitCode(0);
+        $this->artisan('osdd:start')
+            ->expectsConfirmation('Run composer update now?', 'no')
+            ->assertExitCode(0);
 
         $this->assertDirectoryDoesNotExist($this->projectPath . '/config');
-    }
-
-    public function testItSkipsUserModelGracefullyWhenMissing(): void
-    {
-        unlink($this->projectPath . '/app/Models/User.php');
-
-        $this->artisan('osdd:start')->assertExitCode(0);
-
-        $this->assertFileDoesNotExist($this->projectPath . '/functional/users/src/Models/User.php');
-    }
-
-    public function testItSkipsUserFactoryGracefullyWhenMissing(): void
-    {
-        unlink($this->projectPath . '/database/factories/UserFactory.php');
-
-        $this->artisan('osdd:start')->assertExitCode(0);
-
-        $this->assertFileDoesNotExist($this->projectPath . '/functional/users/database/factories/UserFactory.php');
-    }
-
-    public function testItSkipsUserMigrationsGracefullyWhenMissing(): void
-    {
-        unlink($this->projectPath . '/database/migrations/0001_01_01_000000_create_users_table.php');
-
-        $this->artisan('osdd:start')->assertExitCode(0);
-
-        $this->assertFileDoesNotExist($this->projectPath . '/functional/users/database/migrations/0001_01_01_000000_create_users_table.php');
     }
 
     public function testItUsesTheConfiguredFunctionalPath(): void
     {
         $custom = $this->projectPath . '/layers/functional';
-        $this->app['config']->set('osdd.layers.paths', ['functional' => $custom]);
+        $this->app['config']->set('osdd.layers.paths', [
+            'functional' => $custom,
+            'technical'  => $this->projectPath . '/technical',
+        ]);
 
-        $this->artisan('osdd:start')->assertExitCode(0);
+        $this->artisan('osdd:start')
+            ->expectsConfirmation('Run composer update now?', 'no')
+            ->assertExitCode(0);
 
         $this->assertFileExists($custom . '/users/composer.json');
     }
 
+    public function testItInjectsOsddServiceProviderInBootstrapProviders(): void
+    {
+        $this->artisan('osdd:start')
+            ->expectsConfirmation('Run composer update now?', 'no')
+            ->assertExitCode(0);
+
+        $contents = file_get_contents($this->projectPath . '/bootstrap/providers.php');
+
+        $this->assertStringNotContainsString('AppServiceProvider', $contents);
+        $this->assertStringContainsString('OsddServiceProvider::class', $contents);
+        $this->assertStringContainsString('Technical\\Osdd\\Providers\\OsddServiceProvider', $contents);
+    }
+
+    public function testItSkipsBootstrapProvidersGracefullyWhenMissing(): void
+    {
+        unlink($this->projectPath . '/bootstrap/providers.php');
+        rmdir($this->projectPath . '/bootstrap');
+
+        $this->artisan('osdd:start')
+            ->expectsConfirmation('Run composer update now?', 'no')
+            ->assertExitCode(0);
+    }
+
     public function testItRegistersUsersLayerAsPathRepositoryInComposerJson(): void
     {
-        $this->artisan('osdd:start')->assertExitCode(0);
+        $this->artisan('osdd:start')
+            ->expectsConfirmation('Run composer update now?', 'no')
+            ->assertExitCode(0);
 
         $composer = json_decode(file_get_contents($this->projectPath . '/composer.json'), true);
 
@@ -207,7 +234,9 @@ class StartCommandTest extends TestCase
 
     public function testItAddsUsersLayerToRequireInComposerJson(): void
     {
-        $this->artisan('osdd:start')->assertExitCode(0);
+        $this->artisan('osdd:start')
+            ->expectsConfirmation('Run composer update now?', 'no')
+            ->assertExitCode(0);
 
         $composer = json_decode(file_get_contents($this->projectPath . '/composer.json'), true);
 
@@ -215,73 +244,102 @@ class StartCommandTest extends TestCase
         $this->assertSame('*', $composer['require']['functional/users']);
     }
 
+    public function testItCreatesTheOsddLayer(): void
+    {
+        $this->artisan('osdd:start')
+            ->expectsConfirmation('Run composer update now?', 'no')
+            ->assertExitCode(0);
+
+        $this->assertFileExists($this->projectPath . '/technical/osdd/composer.json');
+        $this->assertFileExists($this->projectPath . '/technical/osdd/config/osdd.php');
+        $this->assertFileExists($this->projectPath . '/technical/osdd/src/Providers/OsddServiceProvider.php');
+    }
+
+    public function testItCreatesTheOsddLayerComposerJson(): void
+    {
+        $this->artisan('osdd:start')
+            ->expectsConfirmation('Run composer update now?', 'no')
+            ->assertExitCode(0);
+
+        $contents = file_get_contents($this->projectPath . '/technical/osdd/composer.json');
+
+        $this->assertStringContainsString('"name": "technical/osdd"', $contents);
+        $this->assertStringContainsString('"type": "layer"', $contents);
+        $this->assertStringContainsString('"Technical\\\\Osdd\\\\": "src/"', $contents);
+        $this->assertStringContainsString('OsddServiceProvider', $contents);
+    }
+
+    public function testItCreatesTheOsddServiceProvider(): void
+    {
+        $this->artisan('osdd:start')
+            ->expectsConfirmation('Run composer update now?', 'no')
+            ->assertExitCode(0);
+
+        $contents = file_get_contents($this->projectPath . '/technical/osdd/src/Providers/OsddServiceProvider.php');
+
+        $this->assertStringContainsString('namespace Technical\Osdd\Providers;', $contents);
+        $this->assertStringContainsString('class OsddServiceProvider extends LayerServiceProvider', $contents);
+        $this->assertStringContainsString('overrideConfigFrom', $contents);
+    }
+
+    public function testItRegistersOsddLayerAsPathRepositoryInComposerJson(): void
+    {
+        $this->artisan('osdd:start')
+            ->expectsConfirmation('Run composer update now?', 'no')
+            ->assertExitCode(0);
+
+        $composer = json_decode(file_get_contents($this->projectPath . '/composer.json'), true);
+
+        $urls = array_column($composer['repositories'] ?? [], 'url');
+        $this->assertContains('./technical/osdd', $urls);
+    }
+
+    public function testItAddsOsddLayerToRequireInComposerJson(): void
+    {
+        $this->artisan('osdd:start')
+            ->expectsConfirmation('Run composer update now?', 'no')
+            ->assertExitCode(0);
+
+        $composer = json_decode(file_get_contents($this->projectPath . '/composer.json'), true);
+
+        $this->assertArrayHasKey('technical/osdd', $composer['require']);
+        $this->assertSame('*', $composer['require']['technical/osdd']);
+    }
+
+    public function testItCleansLegacyAutoloadFromComposerJson(): void
+    {
+        $this->artisan('osdd:start')
+            ->expectsConfirmation('Run composer update now?', 'no')
+            ->assertExitCode(0);
+
+        $composer = json_decode(file_get_contents($this->projectPath . '/composer.json'), true);
+
+        $psr4 = $composer['autoload']['psr-4'] ?? [];
+        $this->assertArrayNotHasKey('App\\', $psr4);
+        $this->assertArrayNotHasKey('Database\\Factories\\', $psr4);
+        $this->assertArrayNotHasKey('Database\\Seeders\\', $psr4);
+    }
+
+    public function testItAsksForComposerUpdateConfirmation(): void
+    {
+        $this->artisan('osdd:start')
+            ->expectsConfirmation('Run composer update now?', 'no')
+            ->assertExitCode(0);
+    }
+
     // -------------------------------------------------------------------------
 
-    private function fakeUserModel(): string
+    private function fakeComposer(): array
     {
-        return <<<'PHP'
-<?php
-
-namespace App\Models;
-
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Foundation\Auth\User as Authenticatable;
-use Illuminate\Notifications\Notifiable;
-
-class User extends Authenticatable
-{
-    /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable;
-}
-PHP;
-    }
-
-    private function fakeUserFactory(): string
-    {
-        return <<<'PHP'
-<?php
-
-namespace Database\Factories;
-
-use App\Models\User;
-use Illuminate\Database\Eloquent\Factories\Factory;
-
-class UserFactory extends Factory
-{
-    protected $model = User::class;
-
-    public function definition(): array
-    {
-        return ['name' => fake()->name()];
-    }
-}
-PHP;
-    }
-
-    private function fakeUserMigration(): string
-    {
-        return <<<'PHP'
-<?php
-
-use Illuminate\Database\Migrations\Migration;
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
-
-return new class extends Migration
-{
-    public function up(): void
-    {
-        Schema::create('users', function (Blueprint $table) {
-            $table->id();
-            $table->timestamps();
-        });
-    }
-
-    public function down(): void
-    {
-        Schema::dropIfExists('users');
-    }
-};
-PHP;
+        return [
+            'require' => new \stdClass(),
+            'autoload' => [
+                'psr-4' => [
+                    'App\\'               => 'app/',
+                    'Database\\Factories\\' => 'database/factories/',
+                    'Database\\Seeders\\'  => 'database/seeders/',
+                ],
+            ],
+        ];
     }
 }
