@@ -2,9 +2,9 @@
 
 namespace Xefi\LaravelOSDD;
 
-use Illuminate\Support\ServiceProvider;
+use Illuminate\Foundation\Support\Providers\EventServiceProvider;
 
-abstract class LayerServiceProvider extends ServiceProvider
+abstract class LayerServiceProvider extends EventServiceProvider
 {
     /**
      * @param class-string<\Illuminate\Database\Seeder>[] $seeders
