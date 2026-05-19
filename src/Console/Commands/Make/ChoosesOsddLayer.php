@@ -38,7 +38,6 @@ trait ChoosesOsddLayer
             options: fn(string $value) => $layers
                 ->filter(fn(Layer $l) => str_contains($l->manifest->name(), $value))
                 ->mapWithKeys(fn(Layer $l) => [$l->manifest->name() => $l->manifest->name()])
-                ->sort()
                 ->all(),
         );
 
