@@ -7,14 +7,67 @@ description: Use when working in a Laravel application that depends on xefi/lara
 
 `xefi/laravel-osdd` restructures a Laravel application into independent **layers**. Each layer is its own Composer package, installed via a local path repository, with its own namespace, service provider, migrations, seeders, and tests. The standard `app/`, `database/` and root `config/` directories are removed by `osdd:start` and never recreated.
 
-## When this skill applies
+## When to use this skill
 
-This skill applies as soon as `xefi/laravel-osdd` is in the project's `composer.json`. From that point on:
+Use this skill whenever `xefi/laravel-osdd` is in the project's `composer.json`. From that point on:
 
 - **Never** create files under `app/`, `database/migrations/`, `database/seeders/`, `database/factories/`, or root `config/`. Those directories do not exist in an OSDD project.
 - **Never** run a vanilla `make:*` command (`make:model`, `make:migration`, `make:controller`, …). Always use the `osdd:*` equivalent, which targets a specific layer.
 - **Never** edit `bootstrap/providers.php` to register a domain provider. Layer service providers are auto-registered via each layer's `composer.json` (`extra.laravel.providers`).
 - **Never** add a `psr-4` entry for `App\\`, `Database\\Factories\\` or `Database\\Seeders\\` to the root `composer.json`. `osdd:start` strips them on purpose.
+
+## Features
+
+- **Project bootstrap**: convert a fresh Laravel app into the OSDD layout (deletes `app/`, `database/`, root `config/`; creates a starter `functional/users/` and `technical/osdd/`). Example usage:
+
+```bash
+php artisan osdd:start
+```
+
+- **Layer creation**: scaffold a new self-contained layer (Composer package with its own `src/`, `database/`, `tests/`, and service provider) and register it in the root `composer.json` via a wildcard path repository. Example usage:
+
+```bash
+php artisan osdd:layer functional/orders --generators=migration,model,factory,service-provider,test
+```
+
+- **`osdd:*` make mirrors**: every Laravel `make:*` command has an `osdd:*` equivalent that targets a layer via `--layer=vendor/package` (covers `model`, `controller`, `migration`, `factory`, `seeder`, `policy`, `request`, `resource`, `test`, `config`, `view`, `class`, and more). Example usage:
+
+```bash
+php artisan osdd:model Order --layer=functional/orders --factory --migration
+```
+
+- **Layer-scoped seeders**: every layer registers its seeders through `LayerServiceProvider::loadSeeders([...], priority: 0)`; `osdd:seed` then runs them all across layers in priority order. Example usage:
+
+```bash
+php artisan osdd:seed --fresh
+```
+
+- **Layer-scoped config**: `osdd:config` creates `{layer}/config/{name}.php` and automatically injects `$this->overrideConfigFrom(...)` into the layer's `register()` method. Example usage:
+
+```bash
+php artisan osdd:config orders --layer=functional/orders
+```
+
+- **PHPUnit suite sync**: `osdd:phpunit` walks every discovered layer and adds a `<testsuite>` entry for each one to the root `phpunit.xml`. Idempotent. Example usage:
+
+```bash
+php artisan osdd:phpunit
+```
+
+- **`LayerServiceProvider` base class**: every layer's own provider extends `Xefi\LaravelOSDD\LayerServiceProvider` (not Laravel's `ServiceProvider`) to gain `loadSeeders()` and `overrideConfigFrom()`. Example usage:
+
+```php
+class OrdersServiceProvider extends \Xefi\LaravelOSDD\LayerServiceProvider
+{
+    public function boot(): void
+    {
+        $this->loadMigrationsFrom(__DIR__ . '/../../database/migrations');
+        $this->loadSeeders([OrdersSeeder::class]);
+    }
+}
+```
+
+- **Tinker auto-aliases**: short class names (`User`, `Order`, …) are aliased to the first matching FQCN across all layers, so `User::find(1)` works without a `use` statement inside `php artisan tinker`.
 
 ### How to detect an OSDD project
 
